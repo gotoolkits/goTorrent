@@ -12,13 +12,10 @@ package torrent
 import (
 	"bytes"
 	"crypto/sha1"
+	"errors"
 	"fmt"
 	"io"
-	"log"
-	"net"
-	"net/http"
-	"os"
-	"time"
+	"io/ioutil"
 
 	//_ "github.com/go-sql-driver/mysql"
 
@@ -125,63 +122,36 @@ func (metaInfo *MetaInfo) ReadTorrentMetaInfoFile(r io.Reader) bool {
 	return true
 }
 
-func NewTorrentUrl() {
+func NewTorrentUrl(hashinfo string) {
 
-	url := makeUrl("03621694F0E8B2CE87216C99CB5CA3AF23029E37")
+	//hashinfo := "03621694F0E8B2CE87216C99CB5CA3AF23029E37"
+	filePath := "/tmp/" + hashinfo + ".torrent"
+	retcode := DownLoadTorrentFile(makeUrl(hashinfo), filePath)
+	fmt.Println(retcode)
 
-	fmt.Println(url)
-	//makeUrl("f8181597b51c157fb470e5ee236e364c6fbc2af2")
-
-}
-
-func logFile(msg string) {
-	f, err := os.OpenFile("logfile_torrent.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		return
+	if retcode == 0 {
+		parseTorrentInfo(filePath)
 	}
-	defer f.Close()
-
-	log.SetOutput(f)
-	log.Println(msg)
+	//makeUrl("f8181597b51c157fb470e5ee236e364c6fbc2af2")
 }
 
-var timeout = time.Duration(2 * time.Second)
+// var timeout = time.Duration(2 * time.Second)
 
-func dialTimeout(network, addr string) (net.Conn, error) {
-	return net.DialTimeout(network, addr, timeout)
-}
+// func dialTimeout(network, addr string) (net.Conn, error) {
+// 	return net.DialTimeout(network, addr, timeout)
+// }
 
-func pullTorrent(url string) (int, error) {
+func parseTorrentInfo(filepath string) (int, error) {
 
-	req, err := http.NewRequest("GET", url, nil)
+	bt, err := ioutil.ReadFile(filepath)
 	if err != nil {
 		return 1, err
 	}
 
-	req.Header.Add("User-Agent", "Mozilla/5.0")
-	req.Header.Add("Host", "bt.box.n0808.com")
-	req.Header.Add("Accept", "*/*")
-	req.Header.Add("Connection", "Keep-Alive")
-
-	transport := http.Transport{
-		Dial: dialTimeout,
-	}
-
-	client := &http.Client{
-		Transport: &transport,
-	}
-
-	resp, err := client.Do(req)
-
-	if err != nil {
-		return 2, err
-	}
-	defer resp.Body.Close()
-
 	var metaTorrent MetaInfo
-	ok := metaTorrent.ReadTorrentMetaInfoFile(resp.Body)
+	ok := metaTorrent.ReadTorrentMetaInfoFile(bytes.NewReader(bt))
 	if !ok {
-		return 3, nil
+		return 2, nil
 	}
 
 	name := metaTorrent.Info.Name
@@ -201,10 +171,26 @@ func pullTorrent(url string) (int, error) {
 	}
 	fileList = fileDownLoadList.String()
 
-	fmt.Println(name)
-	fmt.Println(hashInfo)
-	fmt.Println(created)
-	fmt.Println(fileList)
+	fmt.Println("Torrent Info Name:", name)
+	fmt.Println("Torrent Hash key:", hashInfo)
+	fmt.Println("Torrent Created Date:", created)
+	fmt.Println("Torrent File list:", "\n", fileList)
 
 	return 0, nil
+}
+
+func parseTorrentHash(filepath string) (string, error) {
+
+	bt, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return "", err
+	}
+
+	var metaTorrent MetaInfo
+	ok := metaTorrent.ReadTorrentMetaInfoFile(bytes.NewReader(bt))
+	if !ok {
+		return "", errors.New("read torrent mate info file error")
+	}
+
+	return fmt.Sprintf("%X", metaTorrent.InfoHash), nil
 }
